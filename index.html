@@ -1,1 +1,302 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <title>ELECTRONIC LAB - Marek's Edition</title>
+    <style>
+        body { margin: 0; background: #0a0a0c; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        canvas { border: 2px solid #353545; border-radius: 10px; cursor: default; }
+    </style>
+</head>
+<body>
+    <canvas id="labCanvas"></canvas>
 
+<script>
+const canvas = document.getElementById('labCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 1000;
+canvas.height = 700;
+
+// --- KONFIGURÁCIA FARIEB ---
+const FARBY = {
+    pozadie: "#141418", mriezka: "#23232d", biela: "#f0f0f0",
+    siva: "#9696a0", zelena: "#00ff78", modra: "#00a0ff",
+    oranzova: "#ff8c00", cervena: "#ff3232", tien: "#0a0a0c"
+};
+
+// --- PREMENNÉ ---
+let stav = "MENU";
+let nazovFirmy = "";
+let aktivnaListaFirma = false;
+let typZariadenia = "", podtypMobilu = "", nazovZariadenia = "", cenaZariadenia = "";
+let vybranyProcesor = "", vybranaRAM = "", vybraneUlozisko = "";
+let vybraneFunkcieOS = [], vlastneFunkcieOS = "";
+let nazovProcesora = "", vlastneJadra = 4, vlastnyVykon = 2.0;
+let historiaVyrobkov = [];
+let mysPos = { x: 0, y: 0 };
+let aktivnaListaNazov = false, aktivnaListaCena = false, aktivnaListaCPU = false, aktivnaListaOSIne = false;
+
+const moznostiOS = ["Spolupráca s Android", "Spolupráca s Apple", "Super optimalizácia"];
+const cpusMobil = ["Snapdragon 8 Gen 4", "Exynos 2500", "Apple A19 Pro", "Dimensity 9400", "Google Tensor G5", "VLASTNÝ PROCESOR"];
+const cpusPC = ["Intel i5", "Intel i7", "Intel i9", "Ryzen 5", "Ryzen 7", "Ryzen 9", "VLASTNÝ PROCESOR"];
+const rams = ["8GB", "12GB", "16GB", "24GB", "32GB", "64GB"];
+const disky = ["256GB", "512GB", "1TB", "2TB"];
+
+// --- POMOCNÉ FUNKCIE ---
+function drawGrid() {
+    ctx.fillStyle = FARBY.pozadie;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = FARBY.mriezka;
+    ctx.lineWidth = 1;
+    for(let x=0; x<canvas.width; x+=40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,700); ctx.stroke(); }
+    for(let y=0; y<canvas.height; y+=40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(1000,y); ctx.stroke(); }
+}
+
+function drawButton(text, x, y, w, h, farba, fontSize, isCenter = true) {
+    const hover = mysPos.x > x && mysPos.x < x + w && mysPos.y > y && mysPos.y < y + h;
+    ctx.fillStyle = FARBY.tien;
+    ctx.beginPath(); ctx.roundRect(x+4, y+4, w, h, 12); ctx.fill();
+    ctx.fillStyle = hover ? lightenColor(farba) : farba;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill();
+    ctx.fillStyle = (farba === FARBY.zelena || farba === FARBY.biela) ? FARBY.pozadie : FARBY.biela;
+    ctx.font = `bold ${fontSize}px Segoe UI`;
+    ctx.textAlign = "center";
+    ctx.fillText(text, x + w/2, y + h/2 + fontSize/3);
+    return { x, y, w, h };
+}
+
+function lightenColor(hex) {
+    if (hex.startsWith('#')) {
+        let r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+        return `rgb(${Math.min(255, r+40)}, ${Math.min(255, g+40)}, ${Math.min(255, b+40)})`;
+    }
+    return hex;
+}
+
+function drawInput(x, y, w, h, text, aktivny, color = FARBY.zelena) {
+    ctx.strokeStyle = aktivny ? color : FARBY.siva;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = FARBY.biela;
+    ctx.font = "22px Segoe UI";
+    ctx.textAlign = "left";
+    ctx.fillText(text + (aktivny && Math.floor(Date.now()/500)%2 ? "|" : ""), x+15, y+h/1.6);
+}
+
+// --- HLAVNÁ LOGIKA VYKRESLOVANIA ---
+function loop() {
+    drawGrid();
+    ctx.textAlign = "center";
+
+    if (stav === "MENU") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "bold 55px Segoe UI";
+        ctx.fillText("ELECTRONIC LAB", 500, 220);
+        drawButton("SPUSTIŤ SYSTÉM", 350, 350, 300, 70, FARBY.zelena, 32);
+    } 
+    else if (stav === "ZADANIE_FIRMY") {
+        ctx.fillStyle = FARBY.biela; ctx.font = "bold 32px Segoe UI";
+        ctx.fillText("ZADAJ NÁZOV FIRMY", 500, 180);
+        drawInput(300, 260, 400, 60, nazovFirmy, aktivnaListaFirma);
+        drawButton("POKRAČOVAŤ", 400, 380, 200, 50, nazovFirmy ? FARBY.zelena : FARBY.siva, 22);
+    }
+    else if (stav === "LABS") {
+        ctx.textAlign = "left"; ctx.fillStyle = FARBY.zelena; ctx.font = "bold 45px Segoe UI";
+        ctx.fillText("CENTRÁLA: " + nazovFirmy, 50, 80);
+        drawButton("NOVÝ VÝVOJ", 100, 250, 350, 90, FARBY.modra, 32);
+        drawButton(`SKLAD (${historiaVyrobkov.length})`, 500, 250, 350, 90, FARBY.oranzova, 32);
+    }
+    else if (stav === "SKLAD") {
+        ctx.textAlign = "left"; ctx.fillStyle = FARBY.oranzova; ctx.font = "bold 32px Segoe UI";
+        ctx.fillText("SKLAD HOTOVÝCH VÝROBKOV", 50, 80);
+        drawButton("SPÄŤ", 800, 40, 120, 40, FARBY.siva, 20);
+        historiaVyrobkov.slice().reverse().forEach((v, i) => {
+            if(i < 7) {
+                ctx.fillStyle = "#1e1e23"; ctx.beginPath(); ctx.roundRect(50, 120 + i*70, 900, 50, 8); ctx.fill();
+                ctx.fillStyle = FARBY.zelena; ctx.font = "18px Segoe UI";
+                ctx.fillText(`${v.model} | ${v.cpu} | OS: ${v.os} | ${v.cena}€`, 65, 152 + i*70);
+            }
+        });
+    }
+    else if (stav === "VYBER_ZARIADENIA") {
+        ctx.fillStyle = FARBY.biela; ctx.font = "bold 32px Segoe UI"; ctx.fillText("VÝBER TYPU ZARIADENIA", 500, 100);
+        drawButton("SPÄŤ", 50, 40, 120, 40, FARBY.siva, 20);
+        drawButton("MOBIL", 150, 250, 250, 100, FARBY.modra, 32);
+        drawButton("NOTEBOOK", 600, 250, 250, 100, FARBY.modra, 32);
+    }
+    else if (stav === "VYBER_TYPU_MOBILU") {
+        ctx.fillStyle = FARBY.modra; ctx.font = "bold 32px Segoe UI"; ctx.fillText("KONŠTRUKCIA MOBILU", 500, 180);
+        drawButton("FOLD (Skladací)", 300, 250, 400, 80, FARBY.oranzova, 32);
+        drawButton("KLASICKÝ", 300, 350, 400, 80, FARBY.modra, 32);
+        drawButton("SPÄŤ", 50, 40, 120, 40, FARBY.siva, 20);
+    }
+    else if (stav === "VYBER_PROCESORA") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "bold 32px Segoe UI"; ctx.fillText(`KROK 1: PROCESOR PRE ${typZariadenia}`, 500, 80);
+        const list = typZariadenia === "MOBIL" ? cpusMobil : cpusPC;
+        list.forEach((c, i) => drawButton(c, 300, 120 + i*65, 400, 50, c.includes("VLASTNÝ") ? FARBY.oranzova : FARBY.modra, 22));
+    }
+    else if (stav === "VLASTNY_CPU_VYVOJ") {
+        ctx.fillStyle = FARBY.oranzova; ctx.font = "32px Segoe UI"; ctx.fillText("VÝVOJ VLASTNÉHO PROCESORA", 500, 80);
+        drawInput(450, 120, 300, 45, nazovProcesora, aktivnaListaCPU, FARBY.oranzova);
+        ctx.fillStyle = FARBY.biela; ctx.textAlign = "left"; ctx.fillText(`Jadrá: ${vlastneJadra} | Výkon: ${vlastnyVykon.toFixed(1)} GHz`, 100, 250);
+        drawButton("+", 550, 210, 60, 60, FARBY.zelena, 32); drawButton("-", 630, 210, 60, 60, FARBY.cervena, 32);
+        drawButton("+", 550, 310, 60, 60, FARBY.zelena, 32); drawButton("-", 630, 310, 60, 60, FARBY.cervena, 32);
+        drawButton("POTVRDIŤ", 400, 450, 200, 60, FARBY.oranzova, 22);
+    }
+    else if (stav === "VYBER_RAM") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "32px Segoe UI"; ctx.fillText("KROK 2: VÝBER RAM", 500, 80);
+        rams.forEach((r, i) => drawButton(r, 200 + (Math.floor(i/3))*300, 150 + (i%3)*100, 200, 70, FARBY.modra, 32));
+    }
+    else if (stav === "VYBER_ULOZISKA") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "32px Segoe UI"; ctx.fillText("KROK 3: VÝBER ÚLOŽISKA", 500, 80);
+        disky.forEach((d, i) => drawButton(d, 375, 150 + i*80, 250, 60, FARBY.modra, 22));
+    }
+    else if (stav === "ZADANIE_MENA_PRODUKTU") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "32px Segoe UI"; ctx.fillText(`KROK 4: NÁZOV PRE ${typZariadenia}`, 500, 200);
+        drawInput(300, 260, 400, 60, nazovZariadenia, aktivnaListaNazov);
+        drawButton("POKRAČOVAŤ", 400, 380, 200, 50, nazovZariadenia ? FARBY.zelena : FARBY.siva, 22);
+    }
+    else if (stav === "ZADANIE_CENY") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "32px Segoe UI"; ctx.fillText("KROK 5: PREDAJNÁ CENA", 500, 180);
+        drawInput(350, 280, 300, 60, cenaZariadenia + " €", aktivnaListaCena);
+        drawButton("NASTAVIŤ OS", 400, 400, 200, 60, cenaZariadenia ? FARBY.zelena : FARBY.siva, 22);
+    }
+    else if (stav === "VOLBA_OS") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "32px Segoe UI"; ctx.fillText("KONFIGURÁCIA OS", 500, 180);
+        drawButton("VYBRAŤ EXISTUJÚCI", 200, 300, 280, 80, FARBY.modra, 22);
+        drawButton("VYTVORIŤ VLASTNÝ", 520, 300, 280, 80, FARBY.oranzova, 22);
+    }
+    else if (stav === "VYTVORIT_OS") {
+        ctx.textAlign = "left"; ctx.fillStyle = FARBY.oranzova; ctx.font = "32px Segoe UI"; ctx.fillText("VLASTNÝ SYSTÉM", 50, 80);
+        moznostiOS.forEach((opt, i) => {
+            let vybrane = vybraneFunkcieOS.includes(opt);
+            ctx.strokeStyle = vybrane ? FARBY.zelena : FARBY.siva;
+            ctx.strokeRect(100, 150 + i*60, 30, 30);
+            if(vybrane) { ctx.fillStyle = FARBY.zelena; ctx.fillRect(105, 155 + i*60, 20, 20); }
+            ctx.fillStyle = FARBY.biela; ctx.font = "22px Segoe UI"; ctx.fillText(opt, 150, 172 + i*60);
+        });
+        drawInput(100, 400, 500, 50, "INÉ: " + vlastneFunkcieOS, aktivnaListaOSIne, FARBY.modra);
+        drawButton("DOKONČIŤ", 400, 550, 200, 60, FARBY.zelena, 22);
+    }
+    else if (stav === "ZHRNUTIE") {
+        ctx.fillStyle = FARBY.zelena; ctx.font = "bold 55px Segoe UI"; ctx.fillText("REKAPITULÁCIA", 500, 120);
+        ctx.textAlign = "left"; ctx.fillStyle = FARBY.biela; ctx.font = "28px Segoe UI";
+        const osF = vybraneFunkcieOS.join(", ") + (vlastneFunkcieOS ? " + " + vlastneFunkcieOS : "");
+        const info = [`Model: ${nazovZariadenia}`, `CPU: ${vybranyProcesor}`, `RAM: ${vybranaRAM}`, `OS: ${osF}`, `Cena: ${cenaZariadenia} €` ];
+        info.forEach((t, i) => ctx.fillText(t, 200, 220 + i*55));
+        drawButton("ULOŽIŤ A UKONČIŤ", 350, 550, 300, 70, FARBY.zelena, 28);
+    }
+
+    requestAnimationFrame(loop);
+}
+
+// --- OVLÁDANIE ---
+canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    mysPos = { x: e.clientX - r.left, y: e.clientY - r.top };
+});
+
+canvas.addEventListener('mousedown', () => {
+    const click = (x, y, w, h) => mysPos.x > x && mysPos.x < x + w && mysPos.y > y && mysPos.y < y + h;
+
+    if (stav === "MENU" && click(350, 350, 300, 70)) stav = "ZADANIE_FIRMY";
+    else if (stav === "ZADANIE_FIRMY") {
+        aktivnaListaFirma = click(300, 260, 400, 60);
+        if (click(400, 380, 200, 50) && nazovFirmy) stav = "LABS";
+    }
+    else if (stav === "LABS") {
+        if (click(100, 250, 350, 90)) { stav = "VYBER_ZARIADENIA"; resetVars(); }
+        if (click(500, 250, 350, 90)) stav = "SKLAD";
+    }
+    else if (stav === "SKLAD" && click(800, 40, 120, 40)) stav = "LABS";
+    else if (stav === "VYBER_ZARIADENIA") {
+        if (click(50, 40, 120, 40)) stav = "LABS";
+        if (click(150, 250, 250, 100)) { typZariadenia = "MOBIL"; stav = "VYBER_TYPU_MOBILU"; }
+        if (click(600, 250, 250, 100)) { typZariadenia = "NOTEBOOK"; stav = "VYBER_PROCESORA"; }
+    }
+    else if (stav === "VYBER_TYPU_MOBILU") {
+        if (click(50, 40, 120, 40)) stav = "VYBER_ZARIADENIA";
+        if (click(300, 250, 400, 80)) { podtypMobilu = "Fold"; stav = "VYBER_PROCESORA"; }
+        if (click(300, 350, 400, 80)) { podtypMobilu = "Normal"; stav = "VYBER_PROCESORA"; }
+    }
+    else if (stav === "VYBER_PROCESORA") {
+        const list = typZariadenia === "MOBIL" ? cpusMobil : cpusPC;
+        list.forEach((c, i) => {
+            if (click(300, 120 + i*65, 400, 50)) {
+                if (c === "VLASTNÝ PROCESOR") stav = "VLASTNY_CPU_VYVOJ";
+                else { vybranyProcesor = c; stav = "VYBER_RAM"; }
+            }
+        });
+    }
+    else if (stav === "VLASTNY_CPU_VYVOJ") {
+        aktivnaListaCPU = click(450, 120, 300, 45);
+        if (click(550, 210, 60, 60)) vlastneJadra += 2;
+        if (click(630, 210, 60, 60) && vlastneJadra > 1) vlastneJadra--;
+        if (click(550, 310, 60, 60)) vlastnyVykon += 0.2;
+        if (click(630, 310, 60, 60) && vlastnyVykon > 0.5) vlastnyVykon -= 0.1;
+        if (click(400, 450, 200, 60)) {
+            vybranyProcesor = (nazovProcesora || "Marek-Chip X1") + ` (${vlastneJadra}-Core, ${vlastnyVykon.toFixed(1)}GHz)`;
+            stav = "VYBER_RAM";
+        }
+    }
+    else if (stav === "VYBER_RAM") {
+        rams.forEach((r, i) => { if(click(200 + (Math.floor(i/3))*300, 150 + (i%3)*100, 200, 70)) { vybranaRAM = r; stav = "VYBER_ULOZISKA"; } });
+    }
+    else if (stav === "VYBER_ULOZISKA") {
+        disky.forEach((d, i) => { if(click(375, 150 + i*80, 250, 60)) { vybraneUlozisko = d; stav = "ZADANIE_MENA_PRODUKTU"; } });
+    }
+    else if (stav === "ZADANIE_MENA_PRODUKTU") {
+        aktivnaListaNazov = click(300, 260, 400, 60);
+        if (click(400, 380, 200, 50) && nazovZariadenia) stav = "ZADANIE_CENY";
+    }
+    else if (stav === "ZADANIE_CENY") {
+        aktivnaListaCena = click(350, 280, 300, 60);
+        if (click(400, 400, 200, 60) && cenaZariadenia) stav = "VOLBA_OS";
+    }
+    else if (stav === "VOLBA_OS") {
+        if (click(200, 300, 280, 80)) { vybraneFunkcieOS = ["Základný OS"]; stav = "ZHRNUTIE"; }
+        if (click(520, 300, 280, 80)) stav = "VYTVORIT_OS";
+    }
+    else if (stav === "VYTVORIT_OS") {
+        moznostiOS.forEach((opt, i) => {
+            if(click(100, 150 + i*60, 400, 40)) {
+                if(vybraneFunkcieOS.includes(opt)) vybraneFunkcieOS = vybraneFunkcieOS.filter(f => f !== opt);
+                else vybraneFunkcieOS.push(opt);
+            }
+        });
+        aktivnaListaOSIne = click(100, 400, 500, 50);
+        if (click(400, 550, 200, 60)) stav = "ZHRNUTIE";
+    }
+    else if (stav === "ZHRNUTIE" && click(350, 550, 300, 70)) {
+        const infoTyp = podtypMobilu ? `${typZariadenia} (${podtypMobilu})` : typZariadenia;
+        const osFinal = vybraneFunkcieOS.join(", ") + (vlastneFunkcieOS ? " + " + vlastneFunkcieOS : "");
+        historiaVyrobkov.push({ model: `${infoTyp} ${nazovZariadenia}`, cpu: vybranyProcesor, ram: vybranaRAM, disk: vybraneUlozisko, cena: cenaZariadenia, os: osFinal });
+        stav = "LABS";
+    }
+});
+
+window.addEventListener('keydown', e => {
+    let key = e.key;
+    if (key === "Backspace") {
+        if (aktivnaListaFirma) nazovFirmy = nazovFirmy.slice(0, -1);
+        if (aktivnaListaCPU) nazovProcesora = nazovProcesora.slice(0, -1);
+        if (aktivnaListaNazov) nazovZariadenia = nazovZariadenia.slice(0, -1);
+        if (aktivnaListaCena) cenaZariadenia = cenaZariadenia.slice(0, -1);
+        if (aktivnaListaOSIne) vlastneFunkcieOS = vlastneFunkcieOS.slice(0, -1);
+    } else if (key.length === 1) {
+        if (aktivnaListaFirma && nazovFirmy.length < 20) nazovFirmy += key;
+        if (aktivnaListaCPU && nazovProcesora.length < 15) nazovProcesora += key;
+        if (aktivnaListaNazov && nazovZariadenia.length < 20) nazovZariadenia += key;
+        if (aktivnaListaCena && /^\d$/.test(key) && cenaZariadenia.length < 7) cenaZariadenia += key;
+        if (aktivnaListaOSIne && vlastneFunkcieOS.length < 30) vlastneFunkcieOS += key;
+    }
+});
+
+function resetVars() {
+    nazovZariadenia = ""; cenaZariadenia = ""; nazovProcesora = ""; vybraneFunkcieOS = []; vlastneFunkcieOS = "";
+    vybranyProcesor = ""; podtypMobilu = "";
+}
+
+loop();
+</script>
+</body>
+</html>
